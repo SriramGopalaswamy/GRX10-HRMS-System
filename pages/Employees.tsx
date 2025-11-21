@@ -2,10 +2,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useEmployees } from '../contexts/EmployeeContext';
-import { Role } from '../types';
+import { Role, Employee } from '../types';
 import { Search, Plus, Briefcase, MapPin, Mail, FileText } from 'lucide-react';
 import { generateJobDescription } from '../services/geminiService';
 import { OnboardingModal } from '../components/OnboardingModal';
+import { EmployeeDetailsModal } from '../components/EmployeeDetailsModal';
 
 export const Employees: React.FC = () => {
   const { user } = useAuth();
@@ -13,6 +14,7 @@ export const Employees: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showJDModal, setShowJDModal] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   
   // JD Generator State
   const [jdRole, setJdRole] = useState('');
@@ -72,11 +74,15 @@ export const Employees: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredEmployees.map(emp => (
-          <div key={emp.id} className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+          <div 
+            key={emp.id} 
+            onClick={() => setSelectedEmployee(emp)}
+            className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer group"
+          >
             <div className="flex items-start gap-4">
               <img src={emp.avatar} alt={emp.name} className="w-12 h-12 rounded-full object-cover" />
               <div>
-                <h3 className="font-semibold text-slate-900">{emp.name}</h3>
+                <h3 className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">{emp.name}</h3>
                 <p className="text-sm text-slate-500">{emp.designation}</p>
                 <span className="inline-block mt-2 px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded-md font-medium">
                   {emp.role}
@@ -105,6 +111,12 @@ export const Employees: React.FC = () => {
       <OnboardingModal 
         isOpen={showOnboarding} 
         onClose={() => setShowOnboarding(false)} 
+      />
+
+      {/* Employee Details Modal */}
+      <EmployeeDetailsModal 
+        employee={selectedEmployee} 
+        onClose={() => setSelectedEmployee(null)} 
       />
 
       {/* JD Generator Modal */}
