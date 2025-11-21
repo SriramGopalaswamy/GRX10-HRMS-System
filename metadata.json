@@ -1,0 +1,5 @@
+{
+  "name": "GRX10 HRMS Suite",
+  "description": "A comprehensive Human Resource Management System featuring role-based access, attendance tracking, payroll management, and AI-powered HR assistance using Gemini.",
+  "requestFramePermissions": []
+}
