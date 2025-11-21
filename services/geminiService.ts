@@ -1,4 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { Employee, Role, RegularizationRequest, LeaveStatus } from '../types';
+import { MOCK_REGULARIZATIONS } from '../constants';
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
@@ -18,33 +20,67 @@ const tools = [
           },
           required: ["month", "year"]
         }
+      },
+      {
+        name: "openRegularizationForm",
+        description: "Opens a UI form for the user to submit a regularization request (missing punch, incorrect punch, WFH). Use this when the user wants to regularize but hasn't provided all details.",
+        parameters: { type: Type.OBJECT, properties: {} }
+      },
+      {
+        name: "getMyRegularizationRequests",
+        description: "Retrieves the history and status of regularization requests for the current user.",
+        parameters: { type: Type.OBJECT, properties: {} }
+      },
+      {
+        name: "getPendingApprovals",
+        description: "Retrieves pending regularization requests that need approval. Only for Managers and HR.",
+        parameters: { type: Type.OBJECT, properties: {} }
+      },
+      {
+        name: "approveRejectRequest",
+        description: "Approve or reject a specific regularization request.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            requestId: { type: Type.STRING },
+            decision: { type: Type.STRING, enum: ["Approved", "Rejected"] }
+          },
+          required: ["requestId", "decision"]
+        }
       }
     ]
   }
 ];
 
-interface HRResponse {
+export interface HRResponse {
   text: string;
   payslip?: {
     month: string;
     year: string;
     netPay: number;
   };
+  showRegularizationForm?: boolean;
+  regularizationList?: RegularizationRequest[];
+  isApprovalList?: boolean;
 }
 
-export const generateHRResponse = async (query: string, context: string): Promise<HRResponse> => {
+export const generateHRResponse = async (query: string, context: string, user: Employee): Promise<HRResponse> => {
   try {
     const model = 'gemini-2.5-flash';
     const systemInstruction = `You are an helpful HR Assistant for GRX10 Company. 
-    Use the provided context (Company Policies) to answer employee questions accurately. 
-    Be professional, concise, and empathetic. 
+    Current User: ${user.name} (${user.role}).
     
-    CRITICAL TOOL USAGE:
-    If the user asks for a "payslip", "salary slip", "pay stub", or "salary statement", you MUST use the 'generatePayslip' tool.
-    Do not just say you can generate it, actually call the tool.
-    If the month/year is not specified in the user's request, ask the user for it first before calling the tool.
+    Use the provided context (Company Policies) to answer employee questions accurately.
     
-    If the answer to a policy question isn't in the context, advise them to contact HR directly.`;
+    TOOL USAGE RULES:
+    1. Payslips: If user asks for payslip/salary slip, use 'generatePayslip'.
+    2. Regularization: 
+       - If user says "I missed a punch" or "apply for regularization" without details, use 'openRegularizationForm'.
+       - If user asks "status of my requests", use 'getMyRegularizationRequests'.
+       - If Manager/HR asks "pending approvals", use 'getPendingApprovals'.
+       - If Manager/HR says "Approve request REG...", use 'approveRejectRequest'.
+    
+    Be professional and concise.`;
     
     const response = await ai.models.generateContent({
       model: model,
@@ -58,17 +94,55 @@ export const generateHRResponse = async (query: string, context: string): Promis
     // Check for function calls
     const functionCall = response.candidates?.[0]?.content?.parts?.find(p => p.functionCall)?.functionCall;
 
-    if (functionCall && functionCall.name === 'generatePayslip') {
+    if (functionCall) {
       const args = functionCall.args as any;
-      // In a real app, this would call a backend API to generate the PDF
-      return {
-        text: `I've generated your payslip for ${args.month} ${args.year}. You can download it directly from the chat below.`,
-        payslip: {
-          month: args.month,
-          year: args.year,
-          netPay: 85000 // Mock net pay amount
+      
+      if (functionCall.name === 'generatePayslip') {
+        return {
+          text: `I've generated your payslip for ${args.month} ${args.year}. You can download it directly below.`,
+          payslip: {
+            month: args.month,
+            year: args.year,
+            netPay: 85000 // Mock net pay amount
+          }
+        };
+      }
+
+      if (functionCall.name === 'openRegularizationForm') {
+        return {
+          text: "I can help with that. Please fill out the details in the form below to submit your request.",
+          showRegularizationForm: true
+        };
+      }
+
+      if (functionCall.name === 'getMyRegularizationRequests') {
+        // Filter requests for current user
+        const myRequests = MOCK_REGULARIZATIONS.filter(r => r.employeeId === user.id);
+        return {
+          text: myRequests.length ? "Here are your recent regularization requests:" : "You have no regularization requests.",
+          regularizationList: myRequests
+        };
+      }
+
+      if (functionCall.name === 'getPendingApprovals') {
+        if (user.role === Role.EMPLOYEE) {
+          return { text: "Sorry, only Managers and HR can view pending approvals." };
         }
-      };
+        // Filter pending requests (mocking manager view logic)
+        const pending = MOCK_REGULARIZATIONS.filter(r => r.status === LeaveStatus.PENDING && r.employeeId !== user.id);
+        return {
+          text: pending.length ? "Here are the requests pending your approval:" : "No pending approvals found.",
+          regularizationList: pending,
+          isApprovalList: true
+        };
+      }
+
+      if (functionCall.name === 'approveRejectRequest') {
+        return {
+          text: `Request ${args.requestId} has been ${args.decision.toLowerCase()}. (System updated)`,
+          // In a real app, we would update the DB here.
+        };
+      }
     }
 
     return { text: response.text || "I'm sorry, I couldn't process that request right now." };

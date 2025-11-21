@@ -1,27 +1,27 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { generateHRResponse } from '../services/geminiService';
+import { generateHRResponse, HRResponse } from '../services/geminiService';
 import { COMPANY_POLICIES } from '../constants';
-import { Send, Bot, User, FileText, Download } from 'lucide-react';
-
-interface PayslipAttachment {
-  month: string;
-  year: string;
-  netPay: number;
-}
+import { useAuth } from '../contexts/AuthContext';
+import { Send, Bot, User, FileText, Download, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { RegularizationRequest, RegularizationType, LeaveStatus } from '../types';
 
 interface Message {
   id: string;
   text: string;
   sender: 'user' | 'ai';
   timestamp: Date;
-  payslip?: PayslipAttachment;
+  payslip?: { month: string; year: string; netPay: number };
+  showRegularizationForm?: boolean;
+  regularizationList?: RegularizationRequest[];
+  isApprovalList?: boolean;
 }
 
 export const PolicyChat: React.FC = () => {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: "Hello! I'm your GRX10 HR Assistant. Ask me anything about company policies, leave rules, or benefits.",
+      text: "Hello! I'm your GRX10 HR Assistant. Ask me about policies, payslips, or attendance regularization.",
       sender: 'ai',
       timestamp: new Date()
     }
@@ -30,13 +30,20 @@ export const PolicyChat: React.FC = () => {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Regularization Form State
+  const [regForm, setRegForm] = useState({
+    date: '',
+    type: RegularizationType.MISSING_PUNCH,
+    reason: ''
+  });
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(scrollToBottom, [messages]);
 
-  const handleDownload = (payslip: PayslipAttachment) => {
+  const handleDownload = (payslip: { month: string; year: string; netPay: number }) => {
     const htmlContent = `
       <html>
         <head>
@@ -67,10 +74,10 @@ export const PolicyChat: React.FC = () => {
           <div class="grid">
             <div class="box">
               <strong>Employee Details</strong>
-              Name: Alice Carter<br/>
-              ID: EMP001<br/>
-              Dept: Human Resources<br/>
-              Designation: HR Manager
+              Name: ${user?.name}<br/>
+              ID: ${user?.id}<br/>
+              Dept: ${user?.department}<br/>
+              Designation: ${user?.designation}
             </div>
             <div class="box">
               <strong>Payment Details</strong>
@@ -113,30 +120,31 @@ export const PolicyChat: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim()) return;
-
+  const processMessage = async (text: string) => {
+    if (!user) return;
+    
     const userMsg: Message = {
       id: Date.now().toString(),
-      text: input,
+      text: text,
       sender: 'user',
       timestamp: new Date()
     };
 
     setMessages(prev => [...prev, userMsg]);
-    setInput('');
     setIsTyping(true);
 
     try {
-      const aiResponse = await generateHRResponse(userMsg.text, COMPANY_POLICIES);
+      const aiResponse = await generateHRResponse(text, COMPANY_POLICIES, user);
 
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         text: aiResponse.text,
         sender: 'ai',
         timestamp: new Date(),
-        payslip: aiResponse.payslip
+        payslip: aiResponse.payslip,
+        showRegularizationForm: aiResponse.showRegularizationForm,
+        regularizationList: aiResponse.regularizationList,
+        isApprovalList: aiResponse.isApprovalList
       };
 
       setMessages(prev => [...prev, aiMsg]);
@@ -153,6 +161,27 @@ export const PolicyChat: React.FC = () => {
     }
   };
 
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    processMessage(input);
+    setInput('');
+  };
+
+  const submitRegularizationForm = () => {
+    if (!regForm.date || !regForm.reason) return;
+    // In a real app, we'd call an API. Here we just simulate the user telling the bot.
+    const command = `Submit regularization request for ${regForm.date}. Type: ${regForm.type}. Reason: ${regForm.reason}`;
+    processMessage(command);
+    // Reset form visualization by removing the flag from the message (hacky but works for UI cleanup) or just append new message
+    // We'll just leave the form there but it will be 'submitted' effectively
+    setRegForm({ date: '', type: RegularizationType.MISSING_PUNCH, reason: '' });
+  };
+
+  const handleApprovalDecision = (requestId: string, decision: 'Approved' | 'Rejected') => {
+    processMessage(`${decision} request ${requestId}`);
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="p-4 border-b border-slate-100 bg-indigo-50 flex items-center gap-3">
@@ -161,7 +190,7 @@ export const PolicyChat: React.FC = () => {
         </div>
         <div>
           <h3 className="font-semibold text-slate-900">HR Assistant (Powered by Gemini)</h3>
-          <p className="text-xs text-slate-500">Instant answers from company handbook</p>
+          <p className="text-xs text-slate-500">Instant answers & actions</p>
         </div>
       </div>
 
@@ -171,14 +200,14 @@ export const PolicyChat: React.FC = () => {
             key={msg.id} 
             className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div className={`flex gap-3 max-w-[80%] ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+            <div className={`flex gap-3 max-w-[90%] md:max-w-[80%] ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                 msg.sender === 'user' ? 'bg-slate-200' : 'bg-indigo-100 text-indigo-600'
               }`}>
                 {msg.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
               </div>
-              <div>
-                <div className={`p-3 rounded-2xl text-sm ${
+              <div className="flex flex-col gap-2">
+                <div className={`p-3 rounded-2xl text-sm shadow-sm ${
                   msg.sender === 'user' 
                     ? 'bg-indigo-600 text-white rounded-tr-none' 
                     : 'bg-slate-100 text-slate-800 rounded-tl-none'
@@ -186,17 +215,16 @@ export const PolicyChat: React.FC = () => {
                   {msg.text}
                 </div>
                 
-                {/* Payslip Attachment Card */}
+                {/* Payslip Attachment */}
                 {msg.payslip && (
-                  <div className="mt-3 max-w-xs bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="max-w-xs bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-1">
                     <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-rose-100 text-rose-600 rounded-lg">
+                        <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg">
                           <FileText size={16} />
                         </div>
-                        <span className="text-sm font-medium text-slate-700">Payslip Generated</span>
+                        <span className="text-sm font-medium text-slate-700">Payslip Ready</span>
                       </div>
-                      <span className="text-xs font-mono text-slate-500">{msg.payslip.month} {msg.payslip.year}</span>
                     </div>
                     <div className="p-3 flex items-center justify-between gap-4">
                        <div>
@@ -213,10 +241,115 @@ export const PolicyChat: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Regularization Form */}
+                {msg.showRegularizationForm && (
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mt-1 w-full min-w-[280px]">
+                    <h4 className="text-sm font-bold text-slate-800 mb-3">New Regularization Request</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Date</label>
+                        <input 
+                          type="date" 
+                          className="w-full border border-slate-300 rounded-md p-2 text-sm"
+                          value={regForm.date}
+                          onChange={e => setRegForm({...regForm, date: e.target.value})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
+                        <select 
+                          className="w-full border border-slate-300 rounded-md p-2 text-sm"
+                          value={regForm.type}
+                          onChange={e => setRegForm({...regForm, type: e.target.value as RegularizationType})}
+                        >
+                          {Object.values(RegularizationType).map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                         <label className="block text-xs font-medium text-slate-500 mb-1">Reason</label>
+                         <textarea 
+                           className="w-full border border-slate-300 rounded-md p-2 text-sm h-16 resize-none"
+                           placeholder="Brief reason..."
+                           value={regForm.reason}
+                           onChange={e => setRegForm({...regForm, reason: e.target.value})}
+                         />
+                      </div>
+                      <button 
+                        onClick={submitRegularizationForm}
+                        disabled={!regForm.date || !regForm.reason}
+                        className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                      >
+                        Submit Request
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Regularization List / Approval Table */}
+                {msg.regularizationList && msg.regularizationList.length > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm mt-1 overflow-hidden w-full">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 text-slate-500">
+                          <tr>
+                            <th className="px-4 py-2 font-medium">Date</th>
+                            <th className="px-4 py-2 font-medium">Type</th>
+                            {msg.isApprovalList && <th className="px-4 py-2 font-medium">Employee</th>}
+                            <th className="px-4 py-2 font-medium">Status</th>
+                            {msg.isApprovalList && <th className="px-4 py-2 font-medium text-right">Actions</th>}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {msg.regularizationList.map(req => (
+                            <tr key={req.id}>
+                              <td className="px-4 py-3 text-slate-900 whitespace-nowrap">{req.date}</td>
+                              <td className="px-4 py-3 text-slate-600">
+                                <span className="text-xs bg-slate-100 px-2 py-1 rounded">{req.type}</span>
+                              </td>
+                              {msg.isApprovalList && (
+                                <td className="px-4 py-3 text-slate-900">{req.employeeName}</td>
+                              )}
+                              <td className="px-4 py-3">
+                                <span className={`flex items-center gap-1 text-xs font-medium ${
+                                  req.status === LeaveStatus.APPROVED ? 'text-emerald-600' :
+                                  req.status === LeaveStatus.REJECTED ? 'text-rose-600' : 'text-amber-600'
+                                }`}>
+                                  {req.status === LeaveStatus.APPROVED ? <CheckCircle size={12}/> :
+                                   req.status === LeaveStatus.REJECTED ? <XCircle size={12}/> : <Clock size={12}/>}
+                                  {req.status}
+                                </span>
+                              </td>
+                              {msg.isApprovalList && (
+                                <td className="px-4 py-3 text-right whitespace-nowrap">
+                                  <div className="flex justify-end gap-2">
+                                    <button 
+                                      onClick={() => handleApprovalDecision(req.id, 'Approved')}
+                                      className="p-1 bg-emerald-100 text-emerald-600 rounded hover:bg-emerald-200"
+                                    >
+                                      <CheckCircle size={16} />
+                                    </button>
+                                    <button 
+                                      onClick={() => handleApprovalDecision(req.id, 'Rejected')}
+                                      className="p-1 bg-rose-100 text-rose-600 rounded hover:bg-rose-200"
+                                    >
+                                      <XCircle size={16} />
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         ))}
+        
         {isTyping && (
            <div className="flex justify-start">
              <div className="flex gap-3 max-w-[80%]">
@@ -239,8 +372,8 @@ export const PolicyChat: React.FC = () => {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your question here (e.g., 'Download my payslip for Oct 2023')"
-          className="flex-1 border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder="Message HR Assistant... (e.g. 'Check my regularization status')"
+          className="flex-1 border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
         />
         <button 
           type="submit" 
