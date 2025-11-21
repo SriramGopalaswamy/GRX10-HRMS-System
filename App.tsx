@@ -1,6 +1,9 @@
+
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { EmployeeProvider } from './contexts/EmployeeContext';
+import { RegularizationProvider } from './contexts/RegularizationContext';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
@@ -31,10 +34,14 @@ const AppRoutes: React.FC = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <HashRouter>
-        <AppRoutes />
-      </HashRouter>
-    </AuthProvider>
+    <EmployeeProvider>
+      <RegularizationProvider>
+        <AuthProvider>
+          <HashRouter>
+            <AppRoutes />
+          </HashRouter>
+        </AuthProvider>
+      </RegularizationProvider>
+    </EmployeeProvider>
   );
 }

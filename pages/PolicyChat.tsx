@@ -1,9 +1,13 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { generateHRResponse, HRResponse } from '../services/geminiService';
+import { generateHRResponse } from '../services/geminiService';
 import { COMPANY_POLICIES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, Bot, User, FileText, Download, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { useRegularization } from '../contexts/RegularizationContext';
+import { Send, Bot, User, FileText, Download, CheckCircle, XCircle, Clock, UserPlus, UserMinus } from 'lucide-react';
 import { RegularizationRequest, RegularizationType, LeaveStatus } from '../types';
+import { OnboardingModal } from '../components/OnboardingModal';
+import { OffboardingModal } from '../components/OffboardingModal';
 
 interface Message {
   id: string;
@@ -14,10 +18,13 @@ interface Message {
   showRegularizationForm?: boolean;
   regularizationList?: RegularizationRequest[];
   isApprovalList?: boolean;
+  showOnboardingForm?: boolean;
+  showOffboardingForm?: boolean;
 }
 
 export const PolicyChat: React.FC = () => {
   const { user } = useAuth();
+  const { requests, addRequest, updateRequestStatus } = useRegularization();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -29,6 +36,8 @@ export const PolicyChat: React.FC = () => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [showOffboardingModal, setShowOffboardingModal] = useState(false);
 
   // Regularization Form State
   const [regForm, setRegForm] = useState({
@@ -134,7 +143,12 @@ export const PolicyChat: React.FC = () => {
     setIsTyping(true);
 
     try {
-      const aiResponse = await generateHRResponse(text, COMPANY_POLICIES, user);
+      // Pass current requests context to AI
+      const aiResponse = await generateHRResponse(text, COMPANY_POLICIES, user, requests);
+
+      if (aiResponse.regularizationUpdate) {
+        updateRequestStatus(aiResponse.regularizationUpdate.id, aiResponse.regularizationUpdate.status);
+      }
 
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -144,7 +158,9 @@ export const PolicyChat: React.FC = () => {
         payslip: aiResponse.payslip,
         showRegularizationForm: aiResponse.showRegularizationForm,
         regularizationList: aiResponse.regularizationList,
-        isApprovalList: aiResponse.isApprovalList
+        isApprovalList: aiResponse.isApprovalList,
+        showOnboardingForm: aiResponse.showOnboardingForm,
+        showOffboardingForm: aiResponse.showOffboardingForm
       };
 
       setMessages(prev => [...prev, aiMsg]);
@@ -169,220 +185,266 @@ export const PolicyChat: React.FC = () => {
   };
 
   const submitRegularizationForm = () => {
-    if (!regForm.date || !regForm.reason) return;
-    // In a real app, we'd call an API. Here we just simulate the user telling the bot.
-    const command = `Submit regularization request for ${regForm.date}. Type: ${regForm.type}. Reason: ${regForm.reason}`;
+    if (!regForm.date || !regForm.reason || !user) return;
+    
+    // Add to context immediately for better UX, then tell AI
+    const newReq: RegularizationRequest = {
+      id: `REG${Date.now()}`,
+      employeeId: user.id,
+      employeeName: user.name,
+      date: regForm.date,
+      type: regForm.type,
+      reason: regForm.reason,
+      status: LeaveStatus.PENDING,
+      appliedOn: new Date().toISOString().split('T')[0],
+      newCheckIn: regForm.type === RegularizationType.MISSING_PUNCH ? '09:00' : undefined,
+      newCheckOut: regForm.type === RegularizationType.MISSING_PUNCH ? '18:00' : undefined,
+    };
+    addRequest(newReq);
+
+    const command = `I have submitted a regularization request for ${regForm.date}. Type: ${regForm.type}. Reason: ${regForm.reason}`;
     processMessage(command);
-    // Reset form visualization by removing the flag from the message (hacky but works for UI cleanup) or just append new message
-    // We'll just leave the form there but it will be 'submitted' effectively
     setRegForm({ date: '', type: RegularizationType.MISSING_PUNCH, reason: '' });
   };
 
   const handleApprovalDecision = (requestId: string, decision: 'Approved' | 'Rejected') => {
+    // Send command to AI to trigger the tool execution which returns the update instruction
     processMessage(`${decision} request ${requestId}`);
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="p-4 border-b border-slate-100 bg-indigo-50 flex items-center gap-3">
-        <div className="p-2 bg-indigo-100 rounded-full text-indigo-600">
-          <Bot size={24} />
+    <>
+      <div className="flex flex-col h-[calc(100vh-140px)] bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="p-4 border-b border-slate-100 bg-indigo-50 flex items-center gap-3">
+          <div className="p-2 bg-indigo-100 rounded-full text-indigo-600">
+            <Bot size={24} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-900">HR Assistant (Powered by Gemini)</h3>
+            <p className="text-xs text-slate-500">Instant answers & actions</p>
+          </div>
         </div>
-        <div>
-          <h3 className="font-semibold text-slate-900">HR Assistant (Powered by Gemini)</h3>
-          <p className="text-xs text-slate-500">Instant answers & actions</p>
-        </div>
-      </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg) => (
-          <div 
-            key={msg.id} 
-            className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div className={`flex gap-3 max-w-[90%] md:max-w-[80%] ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                msg.sender === 'user' ? 'bg-slate-200' : 'bg-indigo-100 text-indigo-600'
-              }`}>
-                {msg.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
-              </div>
-              <div className="flex flex-col gap-2">
-                <div className={`p-3 rounded-2xl text-sm shadow-sm ${
-                  msg.sender === 'user' 
-                    ? 'bg-indigo-600 text-white rounded-tr-none' 
-                    : 'bg-slate-100 text-slate-800 rounded-tl-none'
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((msg) => (
+            <div 
+              key={msg.id} 
+              className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div className={`flex gap-3 max-w-[90%] md:max-w-[80%] ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  msg.sender === 'user' ? 'bg-slate-200' : 'bg-indigo-100 text-indigo-600'
                 }`}>
-                  {msg.text}
+                  {msg.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
                 </div>
-                
-                {/* Payslip Attachment */}
-                {msg.payslip && (
-                  <div className="max-w-xs bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-1">
-                    <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg">
-                          <FileText size={16} />
+                <div className="flex flex-col gap-2">
+                  <div className={`p-3 rounded-2xl text-sm shadow-sm ${
+                    msg.sender === 'user' 
+                      ? 'bg-indigo-600 text-white rounded-tr-none' 
+                      : 'bg-slate-100 text-slate-800 rounded-tl-none'
+                  }`}>
+                    {msg.text}
+                  </div>
+                  
+                  {/* Action Bubbles */}
+                  {msg.payslip && (
+                    <div className="max-w-xs bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-1">
+                      <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg">
+                            <FileText size={16} />
+                          </div>
+                          <span className="text-sm font-medium text-slate-700">Payslip Ready</span>
                         </div>
-                        <span className="text-sm font-medium text-slate-700">Payslip Ready</span>
                       </div>
-                    </div>
-                    <div className="p-3 flex items-center justify-between gap-4">
-                       <div>
-                         <p className="text-xs text-slate-500">Net Pay</p>
-                         <p className="text-lg font-bold text-slate-900">${msg.payslip.netPay.toLocaleString()}</p>
-                       </div>
-                       <button 
-                        onClick={() => msg.payslip && handleDownload(msg.payslip)}
-                        className="flex items-center gap-2 bg-indigo-600 text-white text-xs font-medium px-3 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
-                       >
-                         <Download size={14} />
-                         PDF
-                       </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Regularization Form */}
-                {msg.showRegularizationForm && (
-                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mt-1 w-full min-w-[280px]">
-                    <h4 className="text-sm font-bold text-slate-800 mb-3">New Regularization Request</h4>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Date</label>
-                        <input 
-                          type="date" 
-                          className="w-full border border-slate-300 rounded-md p-2 text-sm"
-                          value={regForm.date}
-                          onChange={e => setRegForm({...regForm, date: e.target.value})}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
-                        <select 
-                          className="w-full border border-slate-300 rounded-md p-2 text-sm"
-                          value={regForm.type}
-                          onChange={e => setRegForm({...regForm, type: e.target.value as RegularizationType})}
+                      <div className="p-3 flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-xs text-slate-500">Net Pay</p>
+                          <p className="text-lg font-bold text-slate-900">${msg.payslip.netPay.toLocaleString()}</p>
+                        </div>
+                        <button 
+                          onClick={() => msg.payslip && handleDownload(msg.payslip)}
+                          className="flex items-center gap-2 bg-indigo-600 text-white text-xs font-medium px-3 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
                         >
-                          {Object.values(RegularizationType).map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
+                          <Download size={14} />
+                          PDF
+                        </button>
                       </div>
-                      <div>
-                         <label className="block text-xs font-medium text-slate-500 mb-1">Reason</label>
-                         <textarea 
-                           className="w-full border border-slate-300 rounded-md p-2 text-sm h-16 resize-none"
-                           placeholder="Brief reason..."
-                           value={regForm.reason}
-                           onChange={e => setRegForm({...regForm, reason: e.target.value})}
-                         />
-                      </div>
-                      <button 
-                        onClick={submitRegularizationForm}
-                        disabled={!regForm.date || !regForm.reason}
-                        className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                      >
-                        Submit Request
-                      </button>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Regularization List / Approval Table */}
-                {msg.regularizationList && msg.regularizationList.length > 0 && (
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm mt-1 overflow-hidden w-full">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 text-slate-500">
-                          <tr>
-                            <th className="px-4 py-2 font-medium">Date</th>
-                            <th className="px-4 py-2 font-medium">Type</th>
-                            {msg.isApprovalList && <th className="px-4 py-2 font-medium">Employee</th>}
-                            <th className="px-4 py-2 font-medium">Status</th>
-                            {msg.isApprovalList && <th className="px-4 py-2 font-medium text-right">Actions</th>}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {msg.regularizationList.map(req => (
-                            <tr key={req.id}>
-                              <td className="px-4 py-3 text-slate-900 whitespace-nowrap">{req.date}</td>
-                              <td className="px-4 py-3 text-slate-600">
-                                <span className="text-xs bg-slate-100 px-2 py-1 rounded">{req.type}</span>
-                              </td>
-                              {msg.isApprovalList && (
-                                <td className="px-4 py-3 text-slate-900">{req.employeeName}</td>
-                              )}
-                              <td className="px-4 py-3">
-                                <span className={`flex items-center gap-1 text-xs font-medium ${
-                                  req.status === LeaveStatus.APPROVED ? 'text-emerald-600' :
-                                  req.status === LeaveStatus.REJECTED ? 'text-rose-600' : 'text-amber-600'
-                                }`}>
-                                  {req.status === LeaveStatus.APPROVED ? <CheckCircle size={12}/> :
-                                   req.status === LeaveStatus.REJECTED ? <XCircle size={12}/> : <Clock size={12}/>}
-                                  {req.status}
-                                </span>
-                              </td>
-                              {msg.isApprovalList && (
-                                <td className="px-4 py-3 text-right whitespace-nowrap">
-                                  <div className="flex justify-end gap-2">
-                                    <button 
-                                      onClick={() => handleApprovalDecision(req.id, 'Approved')}
-                                      className="p-1 bg-emerald-100 text-emerald-600 rounded hover:bg-emerald-200"
-                                    >
-                                      <CheckCircle size={16} />
-                                    </button>
-                                    <button 
-                                      onClick={() => handleApprovalDecision(req.id, 'Rejected')}
-                                      className="p-1 bg-rose-100 text-rose-600 rounded hover:bg-rose-200"
-                                    >
-                                      <XCircle size={16} />
-                                    </button>
-                                  </div>
-                                </td>
-                              )}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  {msg.showOnboardingForm && (
+                    <button 
+                      onClick={() => setShowOnboardingModal(true)}
+                      className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-3 rounded-xl hover:bg-indigo-700 shadow-sm transition-all text-sm font-medium self-start w-fit mt-1"
+                    >
+                      <UserPlus size={18} />
+                      Open Onboarding Wizard
+                    </button>
+                  )}
+
+                  {msg.showOffboardingForm && (
+                    <button 
+                      onClick={() => setShowOffboardingModal(true)}
+                      className="flex items-center gap-2 bg-rose-600 text-white px-4 py-3 rounded-xl hover:bg-rose-700 shadow-sm transition-all text-sm font-medium self-start w-fit mt-1"
+                    >
+                      <UserMinus size={18} />
+                      Open Offboarding Form
+                    </button>
+                  )}
+
+                  {msg.showRegularizationForm && (
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mt-1 w-full min-w-[280px]">
+                      <h4 className="text-sm font-bold text-slate-800 mb-3">New Regularization Request</h4>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">Date</label>
+                          <input 
+                            type="date" 
+                            className="w-full border border-slate-300 rounded-md p-2 text-sm"
+                            value={regForm.date}
+                            onChange={e => setRegForm({...regForm, date: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
+                          <select 
+                            className="w-full border border-slate-300 rounded-md p-2 text-sm"
+                            value={regForm.type}
+                            onChange={e => setRegForm({...regForm, type: e.target.value as RegularizationType})}
+                          >
+                            {Object.values(RegularizationType).map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">Reason</label>
+                          <textarea 
+                            className="w-full border border-slate-300 rounded-md p-2 text-sm h-16 resize-none"
+                            placeholder="Brief reason..."
+                            value={regForm.reason}
+                            onChange={e => setRegForm({...regForm, reason: e.target.value})}
+                          />
+                        </div>
+                        <button 
+                          onClick={submitRegularizationForm}
+                          disabled={!regForm.date || !regForm.reason}
+                          className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                        >
+                          Submit Request
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {msg.regularizationList && msg.regularizationList.length > 0 && (
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm mt-1 overflow-hidden w-full">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-50 text-slate-500">
+                            <tr>
+                              <th className="px-4 py-2 font-medium">Date</th>
+                              <th className="px-4 py-2 font-medium">Type</th>
+                              {msg.isApprovalList && <th className="px-4 py-2 font-medium">Employee</th>}
+                              <th className="px-4 py-2 font-medium">Status</th>
+                              {msg.isApprovalList && <th className="px-4 py-2 font-medium text-right">Actions</th>}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {msg.regularizationList.map(req => (
+                              <tr key={req.id}>
+                                <td className="px-4 py-3 text-slate-900 whitespace-nowrap">{req.date}</td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  <span className="text-xs bg-slate-100 px-2 py-1 rounded">{req.type}</span>
+                                </td>
+                                {msg.isApprovalList && (
+                                  <td className="px-4 py-3 text-slate-900">{req.employeeName}</td>
+                                )}
+                                <td className="px-4 py-3">
+                                  <span className={`flex items-center gap-1 text-xs font-medium ${
+                                    req.status === LeaveStatus.APPROVED ? 'text-emerald-600' :
+                                    req.status === LeaveStatus.REJECTED ? 'text-rose-600' : 'text-amber-600'
+                                  }`}>
+                                    {req.status === LeaveStatus.APPROVED ? <CheckCircle size={12}/> :
+                                     req.status === LeaveStatus.REJECTED ? <XCircle size={12}/> : <Clock size={12}/>}
+                                    {req.status}
+                                  </span>
+                                </td>
+                                {msg.isApprovalList && req.status === LeaveStatus.PENDING && (
+                                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                                    <div className="flex justify-end gap-2">
+                                      <button 
+                                        onClick={() => handleApprovalDecision(req.id, 'Approved')}
+                                        className="p-1 bg-emerald-100 text-emerald-600 rounded hover:bg-emerald-200"
+                                      >
+                                        <CheckCircle size={16} />
+                                      </button>
+                                      <button 
+                                        onClick={() => handleApprovalDecision(req.id, 'Rejected')}
+                                        className="p-1 bg-rose-100 text-rose-600 rounded hover:bg-rose-200"
+                                      >
+                                        <XCircle size={16} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-        
-        {isTyping && (
-           <div className="flex justify-start">
-             <div className="flex gap-3 max-w-[80%]">
-               <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                 <Bot size={16} />
-               </div>
-               <div className="bg-slate-100 p-3 rounded-2xl rounded-tl-none flex gap-1 items-center">
-                 <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>
-                 <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-75"></span>
-                 <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-150"></span>
-               </div>
-             </div>
-           </div>
-        )}
-        <div ref={messagesEndRef} />
+          ))}
+          
+          {isTyping && (
+            <div className="flex justify-start">
+              <div className="flex gap-3 max-w-[80%]">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                  <Bot size={16} />
+                </div>
+                <div className="bg-slate-100 p-3 rounded-2xl rounded-tl-none flex gap-1 items-center">
+                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>
+                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-75"></span>
+                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-150"></span>
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form onSubmit={handleSend} className="p-4 border-t border-slate-100 flex gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Message HR Assistant... (e.g. 'Offboard employee')"
+            className="flex-1 border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+          />
+          <button 
+            type="submit" 
+            disabled={!input.trim() || isTyping}
+            className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            <Send size={20} />
+          </button>
+        </form>
       </div>
 
-      <form onSubmit={handleSend} className="p-4 border-t border-slate-100 flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Message HR Assistant... (e.g. 'Check my regularization status')"
-          className="flex-1 border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
-        />
-        <button 
-          type="submit" 
-          disabled={!input.trim() || isTyping}
-          className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-        >
-          <Send size={20} />
-        </button>
-      </form>
-    </div>
+      {/* Onboarding Modal triggered from Chat */}
+      <OnboardingModal 
+        isOpen={showOnboardingModal} 
+        onClose={() => setShowOnboardingModal(false)} 
+      />
+      
+      {/* Offboarding Modal triggered from Chat */}
+      <OffboardingModal
+        isOpen={showOffboardingModal}
+        onClose={() => setShowOffboardingModal(false)}
+      />
+    </>
   );
 };

@@ -1,6 +1,6 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Employee, Role, RegularizationRequest, LeaveStatus } from '../types';
-import { MOCK_REGULARIZATIONS } from '../constants';
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
@@ -23,7 +23,7 @@ const tools = [
       },
       {
         name: "openRegularizationForm",
-        description: "Opens a UI form for the user to submit a regularization request (missing punch, incorrect punch, WFH). Use this when the user wants to regularize but hasn't provided all details.",
+        description: "Opens a UI form for the user to submit a regularization request (missing punch, incorrect punch, WFH).",
         parameters: { type: Type.OBJECT, properties: {} }
       },
       {
@@ -47,6 +47,16 @@ const tools = [
           },
           required: ["requestId", "decision"]
         }
+      },
+      {
+        name: "initiateOnboarding",
+        description: "Opens the employee onboarding form to add a new hire. Use this when HR wants to add a new employee.",
+        parameters: { type: Type.OBJECT, properties: {} }
+      },
+      {
+        name: "initiateOffboarding",
+        description: "Opens the employee offboarding form to remove or exit an employee. Use this when HR wants to process a resignation or termination.",
+        parameters: { type: Type.OBJECT, properties: {} }
       }
     ]
   }
@@ -62,9 +72,20 @@ export interface HRResponse {
   showRegularizationForm?: boolean;
   regularizationList?: RegularizationRequest[];
   isApprovalList?: boolean;
+  showOnboardingForm?: boolean;
+  showOffboardingForm?: boolean;
+  regularizationUpdate?: {
+    id: string;
+    status: LeaveStatus;
+  };
 }
 
-export const generateHRResponse = async (query: string, context: string, user: Employee): Promise<HRResponse> => {
+export const generateHRResponse = async (
+  query: string, 
+  context: string, 
+  user: Employee, 
+  currentRequests: RegularizationRequest[]
+): Promise<HRResponse> => {
   try {
     const model = 'gemini-2.5-flash';
     const systemInstruction = `You are an helpful HR Assistant for GRX10 Company. 
@@ -75,10 +96,13 @@ export const generateHRResponse = async (query: string, context: string, user: E
     TOOL USAGE RULES:
     1. Payslips: If user asks for payslip/salary slip, use 'generatePayslip'.
     2. Regularization: 
-       - If user says "I missed a punch" or "apply for regularization" without details, use 'openRegularizationForm'.
+       - If user says "I missed a punch" or "apply for regularization", use 'openRegularizationForm'.
        - If user asks "status of my requests", use 'getMyRegularizationRequests'.
-       - If Manager/HR asks "pending approvals", use 'getPendingApprovals'.
-       - If Manager/HR says "Approve request REG...", use 'approveRejectRequest'.
+       - If Manager/HR asks "pending approvals" or "what requests do I need to approve", use 'getPendingApprovals'.
+       - If Manager/HR says "Approve request REG..." or clicks an action button, use 'approveRejectRequest'.
+    3. Employee Management (HR ONLY):
+       - If HR/Admin says "onboard new employee" or "add new hire", use 'initiateOnboarding'.
+       - If HR/Admin says "offboard employee", "employee resigned", or "remove employee", use 'initiateOffboarding'.
     
     Be professional and concise.`;
     
@@ -116,8 +140,7 @@ export const generateHRResponse = async (query: string, context: string, user: E
       }
 
       if (functionCall.name === 'getMyRegularizationRequests') {
-        // Filter requests for current user
-        const myRequests = MOCK_REGULARIZATIONS.filter(r => r.employeeId === user.id);
+        const myRequests = currentRequests.filter(r => r.employeeId === user.id);
         return {
           text: myRequests.length ? "Here are your recent regularization requests:" : "You have no regularization requests.",
           regularizationList: myRequests
@@ -128,8 +151,15 @@ export const generateHRResponse = async (query: string, context: string, user: E
         if (user.role === Role.EMPLOYEE) {
           return { text: "Sorry, only Managers and HR can view pending approvals." };
         }
-        // Filter pending requests (mocking manager view logic)
-        const pending = MOCK_REGULARIZATIONS.filter(r => r.status === LeaveStatus.PENDING && r.employeeId !== user.id);
+        
+        // Filter logic mirrors Attendance page logic
+        const pending = currentRequests.filter(r => {
+          if (r.status !== LeaveStatus.PENDING) return false;
+          if (user.role === Role.HR || user.role === Role.ADMIN) return true;
+          if (user.role === Role.MANAGER) return r.employeeId !== user.id;
+          return false;
+        });
+
         return {
           text: pending.length ? "Here are the requests pending your approval:" : "No pending approvals found.",
           regularizationList: pending,
@@ -138,9 +168,33 @@ export const generateHRResponse = async (query: string, context: string, user: E
       }
 
       if (functionCall.name === 'approveRejectRequest') {
+        const status = args.decision === 'Approved' ? LeaveStatus.APPROVED : LeaveStatus.REJECTED;
         return {
-          text: `Request ${args.requestId} has been ${args.decision.toLowerCase()}. (System updated)`,
-          // In a real app, we would update the DB here.
+          text: `Request ${args.requestId} has been ${args.decision.toLowerCase()}.`,
+          regularizationUpdate: {
+            id: args.requestId,
+            status: status
+          }
+        };
+      }
+
+      if (functionCall.name === 'initiateOnboarding') {
+        if (user.role !== Role.HR && user.role !== Role.ADMIN) {
+          return { text: "I'm sorry, only HR and Admins can onboard new employees." };
+        }
+        return {
+          text: "Opening the Employee Onboarding Wizard for you.",
+          showOnboardingForm: true
+        };
+      }
+
+      if (functionCall.name === 'initiateOffboarding') {
+        if (user.role !== Role.HR && user.role !== Role.ADMIN) {
+          return { text: "I'm sorry, only HR and Admins can offboard employees." };
+        }
+        return {
+          text: "Opening the Employee Offboarding form.",
+          showOffboardingForm: true
         };
       }
     }

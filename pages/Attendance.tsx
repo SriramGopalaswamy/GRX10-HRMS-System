@@ -1,18 +1,19 @@
 
 import React, { useState } from 'react';
-import { MOCK_ATTENDANCE, MOCK_REGULARIZATIONS } from '../constants';
+import { MOCK_ATTENDANCE } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
+import { useRegularization } from '../contexts/RegularizationContext';
 import { Role, RegularizationType, LeaveStatus } from '../types';
 import { Calendar as CalendarIcon, Clock, CheckCircle, XCircle, FileText, AlertCircle, Check, X } from 'lucide-react';
 
 export const Attendance: React.FC = () => {
   const { user } = useAuth();
+  const { requests: regRequests, addRequest, updateRequestStatus } = useRegularization();
   const [activeTab, setActiveTab] = useState<'logs' | 'requests' | 'approvals'>('logs');
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   
   // Regularization State
   const [showRegModal, setShowRegModal] = useState(false);
-  const [regRequests, setRegRequests] = useState(MOCK_REGULARIZATIONS);
   const [newReg, setNewReg] = useState({
     date: '',
     type: RegularizationType.MISSING_PUNCH,
@@ -51,7 +52,7 @@ export const Attendance: React.FC = () => {
       newCheckIn: newReg.newCheckIn,
       newCheckOut: newReg.newCheckOut
     };
-    setRegRequests([request, ...regRequests]);
+    addRequest(request);
     setShowRegModal(false);
     setActiveTab('requests');
     // Reset form
@@ -65,7 +66,7 @@ export const Attendance: React.FC = () => {
   };
 
   const handleApproval = (id: string, status: LeaveStatus) => {
-    setRegRequests(prev => prev.map(req => req.id === id ? { ...req, status } : req));
+    updateRequestStatus(id, status);
   };
 
   return (

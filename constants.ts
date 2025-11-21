@@ -11,7 +11,10 @@ export const MOCK_EMPLOYEES: Employee[] = [
     designation: 'HR Manager',
     joinDate: '2022-01-15',
     avatar: 'https://picsum.photos/200',
-    salary: 85000
+    salary: 85000,
+    status: 'Active',
+    password: 'password123',
+    isNewUser: false
   },
   {
     id: 'EMP002',
@@ -22,7 +25,10 @@ export const MOCK_EMPLOYEES: Employee[] = [
     designation: 'Tech Lead',
     joinDate: '2021-05-20',
     avatar: 'https://picsum.photos/201',
-    salary: 120000
+    salary: 120000,
+    status: 'Active',
+    password: 'password123',
+    isNewUser: false
   },
   {
     id: 'EMP003',
@@ -34,7 +40,10 @@ export const MOCK_EMPLOYEES: Employee[] = [
     joinDate: '2023-02-10',
     managerId: 'EMP002',
     avatar: 'https://picsum.photos/202',
-    salary: 90000
+    salary: 90000,
+    status: 'Active',
+    password: 'password123',
+    isNewUser: false
   },
   {
     id: 'EMP004',
@@ -45,7 +54,10 @@ export const MOCK_EMPLOYEES: Employee[] = [
     designation: 'Payroll Specialist',
     joinDate: '2022-08-01',
     avatar: 'https://picsum.photos/203',
-    salary: 75000
+    salary: 75000,
+    status: 'Active',
+    password: 'password123',
+    isNewUser: false
   },
   {
     id: 'EMP005',
@@ -56,7 +68,10 @@ export const MOCK_EMPLOYEES: Employee[] = [
     designation: 'Sales Executive',
     joinDate: '2023-06-15',
     avatar: 'https://picsum.photos/204',
-    salary: 60000
+    salary: 60000,
+    status: 'Active',
+    password: 'password123',
+    isNewUser: false
   }
 ];
 

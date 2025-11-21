@@ -1,14 +1,18 @@
+
 import React, { useState } from 'react';
-import { MOCK_EMPLOYEES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
+import { useEmployees } from '../contexts/EmployeeContext';
 import { Role } from '../types';
 import { Search, Plus, Briefcase, MapPin, Mail, FileText } from 'lucide-react';
 import { generateJobDescription } from '../services/geminiService';
+import { OnboardingModal } from '../components/OnboardingModal';
 
 export const Employees: React.FC = () => {
   const { user } = useAuth();
+  const { employees } = useEmployees();
   const [searchTerm, setSearchTerm] = useState('');
   const [showJDModal, setShowJDModal] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   
   // JD Generator State
   const [jdRole, setJdRole] = useState('');
@@ -17,7 +21,7 @@ export const Employees: React.FC = () => {
   const [generatedJD, setGeneratedJD] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const filteredEmployees = MOCK_EMPLOYEES.filter(emp => 
+  const filteredEmployees = employees.filter(emp => 
     emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.department.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -43,7 +47,10 @@ export const Employees: React.FC = () => {
                 <FileText size={18} />
                 Generate JD
               </button>
-              <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 transition-colors">
+              <button 
+                onClick={() => setShowOnboarding(true)}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 transition-colors"
+              >
                 <Plus size={18} />
                 Add Employee
               </button>
@@ -93,6 +100,12 @@ export const Employees: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* Onboarding Modal */}
+      <OnboardingModal 
+        isOpen={showOnboarding} 
+        onClose={() => setShowOnboarding(false)} 
+      />
 
       {/* JD Generator Modal */}
       {showJDModal && (

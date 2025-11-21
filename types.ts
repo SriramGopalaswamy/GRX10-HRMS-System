@@ -18,6 +18,9 @@ export interface Employee {
   avatar: string;
   managerId?: string;
   salary?: number; // Annual CTC
+  status: 'Active' | 'Exited';
+  password?: string; // Mock password for direct login
+  isNewUser?: boolean;
 }
 
 export enum LeaveType {
