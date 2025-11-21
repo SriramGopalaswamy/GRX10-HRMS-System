@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useEmployees } from '../contexts/EmployeeContext';
 import { Role, Employee } from '../types';
-import { Search, Plus, Briefcase, MapPin, Mail, FileText } from 'lucide-react';
+import { Search, Plus, Briefcase, MapPin, Mail, FileText, ChevronRight } from 'lucide-react';
 import { generateJobDescription } from '../services/geminiService';
 import { OnboardingModal } from '../components/OnboardingModal';
 import { EmployeeDetailsModal } from '../components/EmployeeDetailsModal';
@@ -77,9 +77,9 @@ export const Employees: React.FC = () => {
           <div 
             key={emp.id} 
             onClick={() => setSelectedEmployee(emp)}
-            className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer group"
+            className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer group flex flex-col"
           >
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-4 flex-1">
               <img src={emp.avatar} alt={emp.name} className="w-12 h-12 rounded-full object-cover" />
               <div>
                 <h3 className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">{emp.name}</h3>
@@ -89,7 +89,8 @@ export const Employees: React.FC = () => {
                 </span>
               </div>
             </div>
-            <div className="mt-6 space-y-2 text-sm text-slate-600">
+            
+            <div className="mt-6 space-y-2 text-sm text-slate-600 flex-1">
               <div className="flex items-center gap-2">
                 <Briefcase size={16} className="text-slate-400" />
                 {emp.department}
@@ -102,6 +103,17 @@ export const Employees: React.FC = () => {
                 <MapPin size={16} className="text-slate-400" />
                 Office HQ
               </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
+               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                 emp.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+               }`}>
+                 {emp.status}
+               </span>
+               <button className="text-indigo-600 text-sm font-medium flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                 View Details <ChevronRight size={16} />
+               </button>
             </div>
           </div>
         ))}

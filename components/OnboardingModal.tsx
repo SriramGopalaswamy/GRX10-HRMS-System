@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Role, Employee } from '../types';
 import { X, Upload, UserPlus, Check, ChevronRight, ChevronLeft } from 'lucide-react';
@@ -36,16 +35,31 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
     const newEmployee: Employee = {
       id: `EMP${Math.floor(Math.random() * 10000)}`,
       avatar: `https://ui-avatars.com/api/?name=${formData.name}&background=random`,
+      status: 'Active', // Ensure status is set
       ...formData as Employee
     };
     addEmployee(newEmployee);
     onClose();
     // Reset form
     setStep(1);
-    setFormData({});
+    setFormData({
+      name: '',
+      email: '',
+      designation: '',
+      department: '',
+      role: Role.EMPLOYEE,
+      salary: 0,
+      joinDate: new Date().toISOString().split('T')[0],
+      managerId: ''
+    });
+    setOfferLetter(null);
   };
 
-  const managers = employees.filter(e => e.role === Role.MANAGER || e.role === Role.HR);
+  // Refined manager filtering: Active status AND (Manager OR HR OR Admin)
+  const managers = employees.filter(e => 
+    e.status === 'Active' && 
+    (e.role === Role.MANAGER || e.role === Role.HR || e.role === Role.ADMIN)
+  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -157,6 +171,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                     onChange={e => handleChange('managerId', e.target.value)}
                   >
                     <option value="">Select Manager</option>
+                    {managers.length === 0 && <option disabled>No valid managers found</option>}
                     {managers.map(m => <option key={m.id} value={m.id}>{m.name} ({m.designation})</option>)}
                   </select>
                 </div>

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Employee, Role, LeaveType, LeaveStatus } from '../types';
-import { X, Mail, Briefcase, Calendar, DollarSign, User, Clock, Shield, MapPin, Edit2, Save, FileText, Download } from 'lucide-react';
+import { X, Mail, Briefcase, Calendar, DollarSign, User, Clock, Shield, MapPin, Edit2, Save, FileText, Hash } from 'lucide-react';
 import { MOCK_ATTENDANCE, MOCK_LEAVES, MOCK_EMPLOYEES } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { useEmployees } from '../contexts/EmployeeContext';
@@ -209,6 +209,10 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                 Personal Details
               </h3>
               <div className="space-y-4">
+                 <div className="flex items-center gap-3 text-slate-600">
+                   <Hash size={18} className="text-slate-400" />
+                   <span>ID: <span className="font-mono text-slate-800">{employee.id}</span></span>
+                 </div>
                  <div className="flex items-center gap-3 text-slate-600">
                    <Mail size={18} className="text-slate-400" />
                    <span>{employee.email}</span>
